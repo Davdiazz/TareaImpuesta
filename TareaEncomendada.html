@@ -59,6 +59,21 @@
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(255, 23, 68, 0.5);
         }
+        .color-picker {
+            margin-top: 10px;
+        }
+        .color-picker label {
+            color: #666;
+            margin: 0 10px;
+            font-size: 0.9rem;
+        }
+        .color-picker input[type="color"] {
+            width: 40px;
+            height: 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
         @media (max-width: 768px) {
             .title { font-size: 1.5rem; }
         }
@@ -71,35 +86,35 @@
     
     <div class="controls">
         <div class="info">🖱️ Arrastra para rotar | 🔍 Scroll para zoom</div>
-        <button onclick="resetCamera()">🔄 Reiniciar Vista</button>
-        <button onclick="toggleAnimation()">⏯️ Animación</button>
+     
+        <div class="color-picker">
+            <label>Color pétalos:</label>
+            <input type="color" id="petalColor" value="#ff1744" onchange="updateColors()">
+        </div>
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script>
-        let scene, camera, renderer, flower, stem, leaves = [];
+        let scene, camera, renderer, flower, stem, leaves = [], gridHelper;
         let isAnimating = true;
+        let showGrid = true;
         let mouseDown = false;
         let mouseX = 0, mouseY = 0;
         let targetRotationX = 0, targetRotationY = 0;
         let currentRotationX = 0, currentRotationY = 0;
 
         function init() {
-            // Escena
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0xffffff);
 
-            // Cámara
             camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
             camera.position.set(0, 0, 8);
 
-            // Renderer
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.shadowMap.enabled = true;
             document.getElementById('container').appendChild(renderer.domElement);
 
-            // Luces
             const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
             scene.add(ambientLight);
 
@@ -112,10 +127,12 @@
             pointLight.position.set(-5, 5, 5);
             scene.add(pointLight);
 
-            // Crear la flor
+            gridHelper = new THREE.GridHelper(10, 10, 0xcccccc, 0xe0e0e0);
+            gridHelper.position.y = -4;
+            scene.add(gridHelper);
+
             createFlower();
 
-            // Event listeners
             document.addEventListener('mousedown', onMouseDown);
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
@@ -125,14 +142,14 @@
             document.addEventListener('touchend', onTouchEnd);
             window.addEventListener('resize', onWindowResize);
 
-            // Animación
             animate();
         }
 
         function createFlower() {
             const flowerGroup = new THREE.Group();
+            const petalColorHex = document.getElementById('petalColor').value;
 
-            // Centro de la flor (amarillo)
+            // Centro de la flor (amarillo) con más volumen
             const centerGeometry = new THREE.SphereGeometry(0.3, 32, 32);
             const centerMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0xffd700,
@@ -141,7 +158,7 @@
             const center = new THREE.Mesh(centerGeometry, centerMaterial);
             flowerGroup.add(center);
 
-            // Estambres pequeños
+            // Estambres pequeños con volumen
             for (let i = 0; i < 12; i++) {
                 const angle = (i / 12) * Math.PI * 2;
                 const stamenGeometry = new THREE.SphereGeometry(0.08, 16, 16);
@@ -155,11 +172,11 @@
                 flowerGroup.add(stamen);
             }
 
-            // Pétalos (rosa/fucsia)
+            // Pétalos con VOLUMEN REAL - capa externa
             const petalCount = 8;
             for (let i = 0; i < petalCount; i++) {
                 const angle = (i / petalCount) * Math.PI * 2;
-                const petal = createPetal();
+                const petal = createPetalWithVolume(1, petalColorHex);
                 petal.position.set(
                     Math.cos(angle) * 0.8,
                     Math.sin(angle) * 0.8,
@@ -169,10 +186,10 @@
                 flowerGroup.add(petal);
             }
 
-            // Capa interna de pétalos más pequeños
+            // Capa interna de pétalos con volumen
             for (let i = 0; i < petalCount; i++) {
                 const angle = (i / petalCount) * Math.PI * 2 + Math.PI / petalCount;
-                const petal = createPetal(0.6);
+                const petal = createPetalWithVolume(0.6, petalColorHex);
                 petal.position.set(
                     Math.cos(angle) * 0.5,
                     Math.sin(angle) * 0.5,
@@ -182,7 +199,7 @@
                 flowerGroup.add(petal);
             }
 
-            // Tallo (verde)
+            // Tallo con más detalle
             const stemGeometry = new THREE.CylinderGeometry(0.1, 0.15, 4, 32);
             const stemMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x2d5016,
@@ -192,9 +209,9 @@
             stem.position.y = -2;
             flowerGroup.add(stem);
 
-            // Hojas
+            // Hojas con volumen
             for (let i = 0; i < 3; i++) {
-                const leaf = createLeaf();
+                const leaf = createLeafWithVolume();
                 const height = -1 - i * 0.8;
                 leaf.position.set(
                     (i % 2 === 0 ? 0.3 : -0.3),
@@ -212,7 +229,10 @@
             scene.add(flower);
         }
 
-        function createPetal(scale = 1) {
+        function createPetalWithVolume(scale = 1, colorHex) {
+            const petalGroup = new THREE.Group();
+            
+            // Crear la forma base del pétalo
             const petalShape = new THREE.Shape();
             petalShape.moveTo(0, 0);
             petalShape.bezierCurveTo(0.3 * scale, 0.1 * scale, 0.5 * scale, 0.3 * scale, 0.5 * scale, 0.6 * scale);
@@ -220,26 +240,55 @@
             petalShape.bezierCurveTo(-0.3 * scale, 1 * scale, -0.5 * scale, 0.8 * scale, -0.5 * scale, 0.6 * scale);
             petalShape.bezierCurveTo(-0.5 * scale, 0.3 * scale, -0.3 * scale, 0.1 * scale, 0, 0);
 
+            // Extrusión con más profundidad para dar volumen
             const extrudeSettings = {
-                depth: 0.1 * scale,
+                depth: 0.15 * scale,  // Más grosor
                 bevelEnabled: true,
-                bevelThickness: 0.05 * scale,
-                bevelSize: 0.05 * scale,
-                bevelSegments: 3
+                bevelThickness: 0.08 * scale,  // Bisel más pronunciado
+                bevelSize: 0.08 * scale,
+                bevelSegments: 5  // Más segmentos para suavidad
             };
 
             const geometry = new THREE.ExtrudeGeometry(petalShape, extrudeSettings);
+            
+            // Curvar el pétalo para darle forma 3D natural
+            const positions = geometry.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                let x = positions.getX(i);
+                let y = positions.getY(i);
+                let z = positions.getZ(i);
+                
+                // Curvar hacia arriba (efecto cóncavo)
+                const distFromCenter = Math.sqrt(x * x + y * y);
+                const curveFactor = Math.pow(distFromCenter / scale, 1.5);
+                z += curveFactor * 0.3 * scale;
+                
+                // Curvar los bordes hacia atrás
+                if (y > 0.5 * scale) {
+                    const edgeCurve = (y - 0.5 * scale) / (0.5 * scale);
+                    z -= edgeCurve * 0.2 * scale;
+                }
+                
+                positions.setXYZ(i, x, y, z);
+            }
+            
+            positions.needsUpdate = true;
+            geometry.computeVertexNormals();
+
             const material = new THREE.MeshPhongMaterial({ 
-                color: 0xff1744,
+                color: colorHex,
                 side: THREE.DoubleSide,
-                shininess: 50
+                shininess: 60,
+                flatShading: false
             });
             
             const petal = new THREE.Mesh(geometry, material);
-            return petal;
+            petalGroup.add(petal);
+            
+            return petalGroup;
         }
 
-        function createLeaf() {
+        function createLeafWithVolume() {
             const leafShape = new THREE.Shape();
             leafShape.moveTo(0, 0);
             leafShape.bezierCurveTo(0.2, 0.1, 0.3, 0.3, 0.3, 0.5);
@@ -248,21 +297,47 @@
             leafShape.bezierCurveTo(-0.3, 0.3, -0.2, 0.1, 0, 0);
 
             const extrudeSettings = {
-                depth: 0.05,
+                depth: 0.08,  // Más grosor
                 bevelEnabled: true,
-                bevelThickness: 0.02,
-                bevelSize: 0.02,
-                bevelSegments: 2
+                bevelThickness: 0.04,
+                bevelSize: 0.04,
+                bevelSegments: 3
             };
 
             const geometry = new THREE.ExtrudeGeometry(leafShape, extrudeSettings);
+            
+            // Curvar la hoja
+            const positions = geometry.attributes.position;
+            for (let i = 0; i < positions.count; i++) {
+                let x = positions.getX(i);
+                let y = positions.getY(i);
+                let z = positions.getZ(i);
+                
+                // Curvar hacia arriba en el centro
+                const curveFactor = Math.abs(x) * y;
+                z += curveFactor * 0.3;
+                
+                positions.setXYZ(i, x, y, z);
+            }
+            
+            positions.needsUpdate = true;
+            geometry.computeVertexNormals();
+
             const material = new THREE.MeshPhongMaterial({ 
                 color: 0x4CAF50,
                 side: THREE.DoubleSide,
-                shininess: 30
+                shininess: 40
             });
             
             return new THREE.Mesh(geometry, material);
+        }
+
+        function updateColors() {
+            scene.remove(flower);
+            leaves = [];
+            createFlower();
+            flower.rotation.x = currentRotationX;
+            flower.rotation.y = currentRotationY;
         }
 
         function animate() {
@@ -272,7 +347,6 @@
                 flower.rotation.y += 0.005;
             }
 
-            // Suavizar rotación con mouse
             if (mouseDown) {
                 currentRotationX += (targetRotationX - currentRotationX) * 0.1;
                 currentRotationY += (targetRotationY - currentRotationY) * 0.1;
@@ -280,7 +354,6 @@
                 flower.rotation.x = currentRotationX;
             }
 
-            // Animación sutil de las hojas
             leaves.forEach((leaf, index) => {
                 leaf.rotation.z += Math.sin(Date.now() * 0.001 + index) * 0.0005;
             });
@@ -361,6 +434,11 @@
 
         function toggleAnimation() {
             isAnimating = !isAnimating;
+        }
+
+        function toggleGrid() {
+            showGrid = !showGrid;
+            gridHelper.visible = showGrid;
         }
 
         init();
